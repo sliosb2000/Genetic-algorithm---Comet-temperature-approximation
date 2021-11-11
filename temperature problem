@@ -1,0 +1,222 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Mar  6 14:36:47 2021
+
+@author: SLIOSBERG Benjamin
+
+We are given a set of temperature observations read off a comet 
+base hypothesis : we can find a Temperature(time) Weierstrass function of type SUM_n=0_to_c( (a^n)*cos(b^n)*PI*i ) where a is a float {0,1} , b and c are int {1,20} and i the time variable
+We will try to approximate the three coefficients [a,b,c] using a genetic algorithm, an individual is an array of these three coefficients
+
+This is a school project written in french, the variable and function names are manly is french but the commentaries have been translated for easy code comprehension 
+"""      
+
+
+import math
+import operator
+import datetime
+#%% Base definitions
+def t(i,individu):                                  #Temperature function, function of the coefficients [a,b,c] and the time variable
+    t = 0
+    [a,b,c] = [individu[0],individu[1],individu[2]]
+    for n in range(c):
+        t+=(a**n)*math.cos((b**n)*math.pi*i)
+    return t
+
+def Fonction_Fitness(temperatures,individu):        #Fitness function Sum of the errors at each given time point. Comparing the provided data points and the estimations from an individual
+    somme = 0                                       #The temperatures array contains the given temperature of the comet at a given time
+    for k in range(len(temperatures)):
+        somme +=(temperatures[k][1]-t(temperatures[k][0],individu))**2
+    return somme
+    
+def modulationPopulation(population):               #checks the population and deletes the worst performing half. Then generates new random individuals  
+    moyenne_Fitness = 0
+    for i in range(len(population)):                #calculating the mean fitness performance of the population
+        moyenne_Fitness += Fonction_Fitness(temperatures, population[i])
+    moyenne_Fitness/=len(population)                #mean
+    
+    population_mauvaise = []                        #selection of the "bad" individuals
+    for i in range(len(population)):
+        if(Fonction_Fitness(temperatures,population[i])>moyenne_Fitness):
+            population_mauvaise.append(population[i])#bad individuals
+            
+                                                    #deletion of the "bad" individuals from the population
+    population_bonne = [indiv for indiv in population if (indiv not in population_mauvaise)]  #we are only keeping the good individuals
+    
+    for i in range(len(population_mauvaise)):       #generation of new random individuals 
+        a = rd.random()
+        b = rd.randint(1,20)
+        c = rd.randint(1,20)
+        population_bonne.append([a,b,c])   
+    return population_bonne             
+
+#%%Visualisation of the data
+import matplotlib.pyplot as plt
+import time                                         #measuring the execution time to plot the Delta t of each best individual 
+tempsInitial = time.time()
+temps=tempsInitial
+
+import matplotlib.gridspec as gridspec              #separation of plots
+gs = gridspec.GridSpec(2, 2)                        #plots separated in a 2x2 grid
+
+donnes = open("temperature_sample.csv","r")
+temperatures = []                                   #temperatures[i,t] where i is the time and t the temperature. temperatures is filled of the provided data
+for j in donnes:
+    ligne = j.strip("\n").split(";")
+    tup = (float(ligne[0]),float(ligne[1]))
+    temperatures.append(tup) 
+donnes.close()
+
+from operator import itemgetter                     #sorting of the temperatures by increasing i
+temperatures = sorted(temperatures, key=itemgetter(0))
+print(temperatures)
+    
+plt.subplot(gs[0,0])
+X = [sublist[0] for sublist in temperatures]        #1st column extracts the absciss coordinates i  
+Y = [sublist[1] for sublist in temperatures]        #t temperatures as ordonate coordinates
+plt.scatter(X,Y)
+
+#%% creation of the population    
+import random as rd
+#rd.seed(5)
+population = []
+for i in range(100):                                #population fixed at 100 individuals. the population has been checked under different conditions and 100 is an optimised size(larger doesn't affect postively the results and smaller than 50 slows the overall process with too many generations)
+    a = rd.random()
+    b = rd.randint(1,20)
+    c = rd.randint(1,20)
+    population.append([a,b,c])
+    
+meilleur_indiv = population[0]                      #arbitrary initialisation 
+iterations = 0                                      #counter of iterations before the solution
+nb_iterations_entre_changement_nvelle_variable = 0  #number of iterations between change of best indiv. useful to keep an eye on the periods of over-iterations. we will make the % of mutationtion vary when nothing happens for too long.
+nb_avant_changements_optimal = 0   
+progression = []                                    #array used to represent the advancement of the values during the process 
+temps_Passe_entre_Variables = []
+
+Temps_exec = time.time()   
+     
+#%% Algorithmic part
+approximation = 0.050  #Approximation level for more research 0.05 is best, 0.03286 is the lowest value before the execution time is too long
+while(Fonction_Fitness(temperatures,meilleur_indiv)>approximation):#Our fitness function can't converge to a 0 value, our approximation variable is the highest acceptable value for our fitness function
+    
+    
+    for i in range(1):                              #Weirdly we found the having more than 1 crossover by generation slows the overall speed 
+        population = modulationPopulation(population)#Selection of the "best" individuals of the population in respect to the mean fitness
+    
+                                                    #Crossover
+        parent1 = rd.choice(population)
+        parent2 = rd.choice(population)
+        
+        enfant1 = [parent1[0],parent2[1],parent2[2]]
+        enfant2 = [parent2[0],parent1[1],parent1[2]]
+        
+                                                    #adding the generated children to the population
+        population.append(enfant1)
+        population.append(enfant2)
+        
+                                                    #deletion of 2 randomly chosen elements of the population, the generated children can be affected
+        population.remove(rd.choice(population))
+        population.remove(rd.choice(population))
+    
+                                                    #Mutation of 1 element by generation (the mutation % will vary when the too much time passes between new best individual)
+    indiv_mute = rd.choice(population)
+    population.remove(indiv_mute)
+    
+    j=rd.randint(0,2)                               #choice of wich value will mutate [a,b,c] 
+    if(j==0):
+        indiv_mute[j]= rd.random()                  #a in a {0,1} float
+    else:   #si j = 1 ou 2
+        indiv_mute[j] = rd.randint(1, 20)           #b and c are {1,20} int
+    population.append(indiv_mute)  
+    
+                                                    #Dynamic Mutations
+    nb_plateau = 10                                 #after too many generations without any new best individual we make the % of mutation change 
+    if(nb_iterations_entre_changement_nvelle_variable>nb_plateau):  
+                                                    #each multiple of nb_plateau passed, a new individual is mutated. we fixed it at 10 after checking on a {5,25} interval. 10 is optimal
+        for nbi in range(int(nb_iterations_entre_changement_nvelle_variable/nb_plateau)):
+            indiv_mute = rd.choice(population)      #Same process of mutation
+            population.remove(indiv_mute)
+            
+            j=rd.randint(0,2)
+            if(j==0):
+                indiv_mute[j]= rd.random()
+            else:   #si j = 1 ou 2
+                indiv_mute[j] = rd.randint(1, 20)
+            population.append(indiv_mute)
+    
+    #End of Mutations
+    
+    Ycoord_meilleur_Indiv=[]
+    for i in range(len(population)):                #Searching through the population for any new best individual
+        if(Fonction_Fitness(temperatures,population[i]))<Fonction_Fitness(temperatures,meilleur_indiv): #new one found
+            meilleur_indiv=population[i]
+            nb_avant_changements_optimal+=1 #
+                                                    #We plot the curve of this new best individual, approching the wanted values
+            T = []
+            for n in range(len(X)):
+                T.append(t(X[n],meilleur_indiv))
+            plt.plot(X,T,color=[0,0,0],alpha = nb_avant_changements_optimal/1000) #plotting of the approximation graphs, The colors are incrementaly darker for visualisation
+            
+            progression.append(Fonction_Fitness(temperatures,meilleur_indiv))
+            
+            temps_Passe_entre_Variables.append(time.time()-temps)
+            temps=time.time()
+            
+            nb_iterations_entre_changement_nvelle_variable = 0 #reset of the variable to prevent over-mutation after having found a new optimal individual. 
+            
+    iterations+=1
+    nb_iterations_entre_changement_nvelle_variable +=1
+    print(Fonction_Fitness(temperatures,meilleur_indiv)," ",meilleur_indiv," iteration n°",iterations)
+    print(nb_avant_changements_optimal,"changes of variable before finding the best individual. \n")
+    
+#%% Visualisation and saving of the best values.
+
+plt.plot(X,T,color="grey",alpha=0.2,label = "tracing of the progressive estimations")
+plt.title("Iterative graph of the different best values",loc="left",fontsize = "small")
+print("executed in",(datetime.timedelta(milliseconds=(time.time()-Temps_exec)*1000)),"seconds")
+T = []
+for n in range(len(X)):
+    T.append(t(X[n],meilleur_indiv))
+plt.plot(X,T,color="cyan",alpha=0.2,label = "best estimation")
+plt.legend(loc='best',fontsize='x-small')
+    
+import numpy as np
+co = []
+                                                    #plot of the Weierstrass function of the best individual in red
+for n in np.arange(0,2,0.01):
+    co.append(t(n,meilleur_indiv))
+plt.plot(np.arange(0,2,0.01),co,color="red",alpha=0.2,label="Weierstrass of the optimum")
+plt.legend(loc='best',fontsize='x-small')
+#titre
+(a,b,c) = meilleur_indiv[0],meilleur_indiv[1],meilleur_indiv[2]
+aFormate = "a={:0.4f}".format(a)
+approxFormate="à {:0.4f} %".format(Fonction_Fitness(temperatures,meilleur_indiv)*100)
+plt.suptitle((aFormate,"b=",b,"c=",c,"found in",iterations,"iterations, approximate",approxFormate))
+
+
+
+plt.subplot(gs[0,1]) 
+plt.subplots_adjust(left= 0.025)
+
+plt.plot(range(len(progression)),progression,color="black",label = "fitness value of the best individual")
+plt.legend(loc='best',fontsize='x-small')
+plt.ylabel("Fitness fonction")
+
+#plt.subplot(gs[1,0])
+plt.plot(range(len(temps_Passe_entre_Variables)),temps_Passe_entre_Variables,color="grey",label="passed time")
+plt.legend(loc='best',fontsize='x-small')
+plt.xlabel("        time between each variable change ")
+print(meilleur_indiv,"found in",iterations,"iterations, approximate :",approximation*100,"%" )
+
+print(217, 0.175, t(0.175,meilleur_indiv));
+
+
+plt.subplot(gs[1,0])
+Coord_y_MeilleureApprox_Reel = map(operator.sub, T,Y)   
+plt.plot(X,list(Coord_y_MeilleureApprox_Reel),color="black",alpha=0.2)
+plt.xlabel("Delta time(optimal function found and real function)")
+
+ecrire = open("Best_coefficients.txt","a")
+ecrire.write("a= "+str(meilleur_indiv[0])+" b= "+str(meilleur_indiv[1])+" c="+str(meilleur_indiv[2])+" in "+str(iterations)+" interations with "+str(approximation)+" % precision \n")
+ecrire.close()
+
